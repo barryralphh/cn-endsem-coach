@@ -19,7 +19,7 @@ jobs:
       - name: deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-dejavu-core espeak-ng
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core espeak-ng
           pip install pillow edge-tts
       - name: render
         run: python render.py build ${{ matrix.n }}

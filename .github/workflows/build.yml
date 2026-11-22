@@ -1,0 +1,48 @@
+name: build-videos
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        n: ['01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-dejavu-core espeak-ng
+          pip install pillow edge-tts
+      - name: render
+        run: python render.py build ${{ matrix.n }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vid-${{ matrix.n }}
+          path: out/${{ matrix.n }}.*
+  publish:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vid-*
+          path: videos
+          merge-multiple: true
+      - name: push
+        run: |
+          git config user.name cn-coach-bot
+          git config user.email bot@users.noreply.github.com
+          git add videos
+          git commit -m videos || exit 0
+          git pull --rebase
+          git push

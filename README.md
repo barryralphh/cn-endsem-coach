@@ -1,2 +1,2 @@
-# cn-endsem-coach
-CN end-sem video lessons (Gussa Guru coach)
+# CN end-sem coach videos
+Gussa Guru style Hinglish lessons, rendered by GitHub Actions (20 parallel runners). Output lands in videos/.

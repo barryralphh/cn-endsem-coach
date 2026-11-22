@@ -1,4 +1,4 @@
-import sys, os, glob, subprocess, asyncio, math, runpy, time
+import re, sys, os, glob, subprocess, asyncio, math, runpy, time
 from PIL import Image, ImageDraw, ImageFont
 
 NL = chr(10)
@@ -202,11 +202,12 @@ def left_layout(d, items, x, y, w, sz):
             y += 300
     return y
 
-def right_layout(d, lines, x, y, w, sz):
+def right_layout(d, lines, x, y, w, sz, spans=None):
     f = F(sz, False, True)
     fb = F(sz, True, True)
     lh = sz + 7
     for ln in lines:
+        y0 = y
         if ln.startswith('## '):
             y += 4
             for t in wrap(ln[3:], fb, w):
@@ -236,6 +237,8 @@ def right_layout(d, lines, x, y, w, sz):
             for t in wrap(ln, f, w):
                 d.text((x, y), t, font=f, fill=C['ink'])
                 y += lh
+        if spans is not None:
+            spans.append((y0, y))
     return y
 
 _scr = Image.new('RGB', (W, H))
@@ -289,6 +292,61 @@ def frame(sc, idx, total, ltitle, nl, nr, lsz, rsz, mouth, full, has_r):
         for ln in cap:
             d.text((180, ty), ln, font=cf, fill=(30, 30, 50))
             ty += 34
+    return im
+
+
+CONN = ['Pehle', 'Ab agla step', 'Phir', 'Iske baad', 'Ab dekho', 'Chalo aage']
+
+def words(t):
+    t = t.replace('0x', 'hex ')
+    t = re.sub(r'\d+\.\d+\.\d+\.\d+', lambda m: m.group(0).replace('.', ' dot '), t)
+    t = re.sub(r'(?<=\d)\.(?=\d)', ' point ', t)
+    t = t.replace('->', ' matlab ').replace('=>', ' matlab ').replace('\u2192', ' matlab ')
+    t = t.replace('\u00d7', ' into ').replace('\u00f7', ' divided by ')
+    t = re.sub(r'(?<=[\d)])\s*[x*]\s*(?=[\d(])', ' into ', t)
+    t = re.sub(r'\s[x*]\s', ' into ', t)
+    t = re.sub(r'(?<=[\w)])\s*/\s*(?=[\w(])', ' divided by ', t)
+    t = re.sub(r'(?<![\w)])/(?=\d)', ' slash ', t)
+    t = t.replace('^', ' power ').replace('=', ' barabar ').replace('+', ' plus ')
+    t = re.sub(r'\s-\s', ' minus ', t)
+    t = t.replace('%', ' percent').replace('(', ' ').replace(')', ' ')
+    t = re.sub(r'\b(?=[0-9A-F]*\d)(?=[0-9A-F]*[A-F])[0-9A-F]{2,}\b', lambda m: ' '.join(m.group(0)), t)
+    return re.sub(r'\s+', ' ', t).strip()
+
+def spoken(ln, g):
+    if ln.startswith('## '):
+        return 'Ab dekhte hain, ' + words(ln[3:]) + '.'
+    if ln.startswith('! '):
+        return 'Yeh hamara answer hai. ' + words(ln[2:]) + '. Isko box kar do.'
+    if ln.startswith('? '):
+        return 'Sawal yeh hai. ' + words(ln[2:]) + '.'
+    if ln.startswith('~ '):
+        return 'Dhyan rakho. ' + words(ln[2:]) + '.'
+    return CONN[g % len(CONN)] + '. ' + words(ln) + '.'
+
+def calc_frame(lines, vis_to, a, b, idx, total, ltitle, rsz, mouth, cap, gi, gn):
+    im = Image.new('RGB', (W, H), C['bg'])
+    d = ImageDraw.Draw(im)
+    d.rectangle([0, 0, W, 64], fill=C['bar'])
+    d.text((24, 14), ltitle + '  |  CALCULATION', font=F(30, True), fill=C['yel'])
+    d.text((W - 24, 22), 'Gussa Guru CN Dojo  |  %d/%d' % (idx, total), font=F(20), fill=C['dim'], anchor='ra')
+    d.rounded_rectangle([16, 76, W - 16, 530], 14, fill=C['paper'])
+    d.text((36, 84), 'CALCULATION / WORKING   step %d of %d' % (gi, gn), font=F(16, True), fill=(120, 53, 15))
+    vis = lines[:vis_to + 1]
+    sp = []
+    right_layout(ImageDraw.Draw(_scr), vis, 36, 112, 1176, rsz, sp)
+    d.rounded_rectangle([28, sp[a][0] - 3, W - 28, sp[b][1] + 3], 8, fill=(254, 240, 138), outline=(202, 138, 4), width=2)
+    right_layout(d, vis, 36, 112, 1176, rsz)
+    by = 618 + (-4 if mouth else 0)
+    bird(d, 84, by, 58, mouth)
+    d.polygon([(142, 600), (166, 584), (166, 620)], fill=(255, 255, 255))
+    d.rounded_rectangle([160, 548, W - 16, 704], 18, fill=(255, 255, 255))
+    cf = F(26, True)
+    cp = wrap(cap, cf, W - 16 - 160 - 36)[:3]
+    ty = 626 - len(cp) * 17
+    for ln in cp:
+        d.text((180, ty), ln, font=cf, fill=(30, 30, 50))
+        ty += 34
     return im
 
 def probe(p):
@@ -358,31 +416,72 @@ def build(n, mode):
     entries = []
     wavs = []
     total = len(scenes)
-    for i, sc in enumerate(scenes, 1):
-        wav = '%s/a%02d.wav' % (work, i)
-        tts(sc['say'], wav, mode)
+    cnt = [0]
+
+    def newwav(say):
+        cnt[0] += 1
+        wav = '%s/a%03d.wav' % (work, cnt[0])
+        tts(say, wav, mode)
         wavs.append(wav)
-        D = probe(wav)
+        return wav, probe(wav)
+
+    def hold(imgs, sd):
+        t = 0.0
+        j = 0
+        while t < sd - 1e-6:
+            c = min(0.5, sd - t)
+            entries.append((imgs[j % len(imgs)], c))
+            t += c
+            j += 1
+
+    def emit_plain(sc, i, say):
+        wav, D = newwav(say)
         full, has_r, lsz, rsz = sizes_for(sc)
         left, right = sc['left'], sc['right']
         steps = max(len(left), len(right), 1)
         for s in range(steps):
             nl = math.ceil((s + 1) * len(left) / steps)
             nr = math.ceil((s + 1) * len(right) / steps)
-            sd = D / steps
             imgs = []
             for mouth in ((0, 1) if not full else (0,)):
-                p = '%s/f%02d_%02d_%d.png' % (work, i, s, mouth)
+                p = '%s/f%03d_%02d_%d.png' % (work, cnt[0], s, mouth)
                 frame(sc, i, total, L['title'], nl, nr, lsz, rsz, mouth, full, has_r).save(p)
                 imgs.append(p)
-            t = 0.0
-            j = 0
-            while t < sd - 1e-6:
-                c = min(0.5, sd - t)
-                entries.append((imgs[j % len(imgs)], c))
-                t += c
+            hold(imgs, D / steps)
+
+    def emit_calc(sc, i):
+        lines = sc['right']
+        groups = []
+        j = 0
+        while j < len(lines):
+            if lines[j].startswith('## ') and j + 1 < len(lines) and not lines[j + 1].startswith('## '):
+                groups.append((j, j + 1))
+                j += 2
+            else:
+                groups.append((j, j))
                 j += 1
-        print('scene', i, 'of', total, 'dur', round(D, 1))
+        rsz = fit(lambda d, sz: right_layout(d, lines, 0, 0, 1176, sz), 396, (30, 28, 26, 24, 22, 20, 18, 16, 14))
+        for g, (a, b) in enumerate(groups):
+            say = ' '.join(spoken(lines[t], g) for t in range(a, b + 1))
+            if g == 0:
+                say = 'Ab calculation karte hain, dhyan se dekho. ' + say
+            wav, D = newwav(say)
+            cap = ' '.join(re.sub(r'^(##|[!?~]) ', '', lines[t]) for t in range(a, b + 1))
+            imgs = []
+            for mouth in (0, 1):
+                p = '%s/c%03d_%d.png' % (work, cnt[0], mouth)
+                calc_frame(lines, b, a, b, i, total, L['title'], rsz, mouth, cap, g + 1, len(groups)).save(p)
+                imgs.append(p)
+            hold(imgs, D)
+
+    for i, sc in enumerate(scenes, 1):
+        if sc['right'] and not sc.get('full'):
+            if sc['left']:
+                emit_plain(dict(sc, right=[]), i, sc['say'])
+            emit_calc(sc, i)
+        else:
+            emit_plain(sc, i, sc['say'])
+        print('scene', i, 'of', total)
     with open(work + '/frames.txt', 'w') as fh:
         for p, c in entries:
             fh.write('file ' + chr(39) + os.path.abspath(p) + chr(39) + NL + 'duration %.3f' % c + NL)

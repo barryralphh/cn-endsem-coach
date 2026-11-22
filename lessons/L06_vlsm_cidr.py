@@ -8,7 +8,7 @@ L = dict(title='VLSM and CIDR Block Allocation', points=[
  'Remaining addresses = total block minus the sum of all allocated blocks',
  'Slash 16 has 65536 addresses, slash 24 has 256, slash 25 has 128, slash 26 has 64',
  'Supernetting joins contiguous blocks: 4 class C blocks become slash 22 with mask 255.255.252.0',
- 'Blocks to be aggregated must be a power of 2 in count and the first one must be aligned']), scenes=[
+ 'Blocks to be aggregated must be a power of 2 in count and the first one must be aligned'], scenes=[
  S('Namaste! Aaj VLSM aur CIDR, yaani address ko zaroorat ke hisaab se baantna. Analogy: tumhare paas zameen ka bada plot hai aur alag alag size ke grahak hain. Pehle sabse bade grahak ko plot do, phir chhote ko. Aur har plot ka size power of two hota hai: sixty-four, one twenty-eight, two fifty-six. Number kitna bhi maange, upar wale power of two tak round kar lo.',
   'Zameen baantna: bade grahak pehle, size = power of 2',
   [['h', 'VLSM rules'], ['tbl', [['Need', 'Round to', 'Prefix'], ['10', '16', '/28'], ['60', '64', '/26'], ['120', '128', '/25'], ['200', '256', '/24']]], ['t', 'Prefix = 32 - log2(block). Biggest block FIRST.']],
